@@ -85,23 +85,63 @@ python .claude/skills/scripts/sausg_open.py Project/Example2.ssg 非线性 "D:\S
 #### 命令格式
 
 ```bash
-python .claude/skills/scripts/sausg_calc.py <模型路径> [软件目录]
+python .claude/skills/scripts/sausg_calc.py <模型路径> [软件目录] [--no-cleanup]
 ```
 
 #### 参数说明
 
 - `模型路径`: .ssg 格式的模型文件完整路径
 - `软件目录`: 可选，指定 SAUSG 安装目录
+- `--no-cleanup`: 可选，计算前不清理模型目录下的旧文件
 
 #### 使用示例
 
 ```bash
-# 自动搜索软件并计算
+# 自动搜索软件并计算（默认会清理旧文件）
 python .claude/skills/scripts/sausg_calc.py Test/Example.ssg
 
 # 指定软件目录
 python .claude/skills/scripts/sausg_calc.py Project/Example2.ssg "D:\SAUSG2026"
+
+# 不清理旧文件
+python .claude/skills/scripts/sausg_calc.py Test/Example.ssg --no-cleanup
 ```
+
+#### 自动清理功能
+
+计算前会自动清理模型目录下的以下文件：
+
+| 类型 | 文件扩展名 |
+|------|-----------|
+| 结果文件 | .BCR, .BEM, .BLR, .PAR, .DEF |
+| 日志文件 | .MSG |
+| 中间文件 | .D01~.D05, .EIG, .FRQ, .MFQ, .MOD, .MOF, .NSD, .NSF |
+| 输出文件 | .INP, .TXT, .DAT, .CSV |
+| 图片文件 | .jpg, .png |
+| 结果文件夹 | StaticResult/, EarthQuakeResult/, DesignResult/ |
+
+**注意**: 模型文件本身（.ssg）不会被删除。
+
+#### 计算进度提示
+
+计算过程中会实时显示各阶段进度：
+
+| 阶段 | 完成标志 |
+|------|---------|
+| 网格划分 | .BCR 或 .BEM 文件生成 |
+| 初始分析 | StaticResult 文件夹（.FRQ/.MFQ/.NSF） |
+| 动力时程分析 | EarthQuakeResult 文件夹 |
+| 结果报告 | .DOCX 计算报告 |
+
+#### 主要结果输出
+
+计算完成后自动输出主要结果：
+
+- 基本周期 (T1, T2, T3...)
+- 频率 (f1, f2, f3...)
+- 楼层总重
+- 底部反力 (Rx, Ry, Rz)
+- 计算报告文件名
 
 ### 4. 批量计算多个模型
 

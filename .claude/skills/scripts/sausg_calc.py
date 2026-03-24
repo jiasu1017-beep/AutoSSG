@@ -19,6 +19,8 @@ import time
 import re
 import locale
 from typing import Optional, List, Tuple
+import ntpath
+import posixpath
 
 # 设置编码以支持 cmd 和 PowerShell
 if sys.platform == 'win32':
@@ -247,6 +249,53 @@ def check_calc_success(model_path: str) -> bool:
     return False
 
 
+def normalize_windows_path(model_path: str) -> str:
+    r"""
+    将模型路径转换为Windows绝对路径格式
+
+    处理以下格式：
+    - 相对路径: Project/Example.ssg -> F:\00AI\AutoSSG\Project\Example.ssg
+    - Unix风格路径: f:/00AI/AutoSSG/Project/Example.ssg -> F:\00AI\AutoSSG\Project\Example.ssg
+    - Windows风格路径: F:\00AI\AutoSSG\Project\Example.ssg -> 保持不变
+
+    Args:
+        model_path: 用户传入的模型路径
+
+    Returns:
+        str: Windows绝对路径格式
+    """
+    # 如果已经是绝对Windows路径，直接返回
+    if os.path.isabs(model_path) and (':' in model_path):
+        # 确保是大写驱动器字母
+        if len(model_path) >= 2 and model_path[1] == ':':
+            return model_path[0].upper() + model_path[1:]
+        return model_path
+
+    # 转换Unix风格路径 (f:/ 或 f:\) 为Windows路径
+    if '/' in model_path or '\\' in model_path:
+        # 处理Unix风格路径
+        if model_path[0].isalpha() and len(model_path) > 2 and model_path[1] == '/':
+            # f:/... -> F:\...
+            drive = model_path[0].upper()
+            rest = model_path[2:].replace('/', '\\')
+            model_path = drive + ':' + rest
+
+    # 如果是相对路径，转换为绝对路径
+    if not os.path.isabs(model_path):
+        # 获取当前工作目录
+        cwd = os.getcwd()
+        model_path = os.path.join(cwd, model_path)
+
+    # 规范化路径（处理..、.等）
+    model_path = os.path.normpath(model_path)
+
+    # 确保驱动器字母是大写
+    if len(model_path) >= 2 and model_path[1] == ':':
+        model_path = model_path[0].upper() + model_path[1:]
+
+    return model_path
+
+
 def find_calc_program(sausg_dir: str) -> str:
     """查找可用的计算程序"""
     for prog in CALC_PROGRAMS:
@@ -256,7 +305,285 @@ def find_calc_program(sausg_dir: str) -> str:
     return None
 
 
-def run_sausg(model_path: str, wait: bool = True, sausg_dir: str = None) -> dict:
+def check_calc_progress(model_dir: str, model_name: str) -> dict:
+    """
+    检查计算进度
+
+    进度判断依据：
+    - .BCR/.BEM文件生成 → 网格划分完成
+    - StaticResult文件夹 → 初始分析结果
+    - .FRQ文件 → 模型基本周期
+    - .MFQ文件 → 模型最大频率
+    - .NSF文件 → 模型反力
+    - EarthQuakeResult文件夹 → 动力结果文件夹
+    - 计算报告XXXX.docx → 计算完成
+
+    Returns:
+        dict: 包含各阶段完成状态的字典
+    """
+    progress = {
+        "mesh": False,        # 网格划分
+        "static": False,      # 初始分析
+        "dynamic": False,     # 动力时程分析
+        "report": False       # 结果报告
+    }
+
+    # 检查网格划分完成标志：.BCR 或 .BEM 文件
+    bcr_path = os.path.join(model_dir, f"{model_name}.BCR")
+    bem_path = os.path.join(model_dir, f"{model_name}.BEM")
+    progress["mesh"] = os.path.exists(bcr_path) or os.path.exists(bem_path)
+
+    # 检查初始分析完成标志：StaticResult文件夹
+    static_dir = os.path.join(model_dir, "StaticResult")
+    if os.path.isdir(static_dir):
+        # 检查FRQ文件（基本周期）
+        frq_files = [f for f in os.listdir(static_dir) if f.upper().endswith('.FRQ')]
+        # 检查MFQ文件（最大频率）
+        mfq_files = [f for f in os.listdir(static_dir) if f.upper().endswith('.MFQ')]
+        # 检查NSF文件（模型反力）
+        nsf_files = [f for f in os.listdir(static_dir) if f.upper().endswith('.NSF')]
+
+        if frq_files or mfq_files or nsf_files:
+            progress["static"] = True
+
+    # 检查动力时程分析完成标志：EarthQuakeResult文件夹
+    eq_dir = os.path.join(model_dir, "EarthQuakeResult")
+    if os.path.isdir(eq_dir):
+        # 检查是否有工况目录
+        eq_subdirs = [d for d in os.listdir(eq_dir) if os.path.isdir(os.path.join(eq_dir, d))]
+        if eq_subdirs:
+            progress["dynamic"] = True
+
+    # 检查计算报告：.docx文件
+    docx_files = [f for f in os.listdir(model_dir) if f.upper().endswith('.DOCX')]
+    if docx_files:
+        progress["report"] = True
+
+    return progress
+
+
+def get_calc_stages() -> list:
+    """返回计算阶段列表"""
+    return [
+        {"name": "网格划分", "key": "mesh", "files": [".BCR", ".BEM"]},
+        {"name": "初始分析", "key": "static", "files": ["StaticResult/", ".FRQ", ".MFQ", ".NSF"]},
+        {"name": "动力时程分析", "key": "dynamic", "files": ["EarthQuakeResult/"]},
+        {"name": "结果报告", "key": "report", "files": [".DOCX"]}
+    ]
+
+
+def format_progress(progress: dict) -> str:
+    """格式化进度为可读字符串"""
+    stages = get_calc_stages()
+    lines = []
+    for stage in stages:
+        status = "完成" if progress.get(stage["key"], False) else "进行中"
+        lines.append(f"  [{status}] {stage['name']}")
+    return "\n".join(lines)
+
+
+def read_main_results(model_dir: str, model_name: str) -> dict:
+    """
+    读取主要计算结果
+
+    Returns:
+        dict: 包含主要结果的字典
+    """
+    results = {
+        "periods": [],      # 基本周期
+        "frequencies": [],  # 频率
+        "reactions": None,  # 底部反力
+        "reports": []       # 计算报告
+    }
+
+    # 读取FRQ文件（基本周期和频率）
+    static_dir = os.path.join(model_dir, "StaticResult")
+    if os.path.isdir(static_dir):
+        frq_files = [f for f in os.listdir(static_dir) if f.upper().endswith('.FRQ')]
+        for frq_file in frq_files:
+            try:
+                frq_path = os.path.join(static_dir, frq_file)
+                # FRQ文件是GBK编码
+                for encoding in ['gbk', 'utf-8', 'cp1252', 'latin1']:
+                    try:
+                        with open(frq_path, 'r', encoding=encoding) as f:
+                            lines = f.readlines()
+                        break
+                    except Exception:
+                        continue
+
+                # 解析FRQ文件格式：
+                # 第1行: 计算结果: Nmode = 10
+                # 第2行: 周期  振型频率   频率   阻尼
+                # 后续行: 序号  周期(s)   频率(Hz)  阻尼
+                for line in lines:
+                    # 跳过标题行
+                    if '周期' in line or '振型' in line or 'mode' in line.lower():
+                        continue
+                    parts = line.strip().split()
+                    if len(parts) >= 3:
+                        try:
+                            # 第一列是序号，第二列是周期，第三列是频率
+                            mode_num = int(parts[0])
+                            period = float(parts[1])
+                            freq = float(parts[2])
+                            if mode_num <= 6:  # 只取前6阶
+                                results["periods"].append(f"T{mode_num}={period:.4f}s")
+                                results["frequencies"].append(f"f{mode_num}={freq:.4f}Hz")
+                        except (ValueError, IndexError):
+                            continue
+            except Exception as e:
+                print(f"  读取FRQ文件失败: {e}")
+
+        # 读取NSF文件（底部反力）
+        # 格式示例:
+        # 楼层总重(kN): Fx = 0.000000e+00, Fy = 0.000000e+00, Fz = -2.829793e+04
+        # 底反力(kN): Rx = 2.359884e-01, Ry = -2.515078e-03, Rz = 2.829676e+04
+        nsf_files = [f for f in os.listdir(static_dir) if f.upper().endswith('.NSF')]
+        if nsf_files:
+            try:
+                nsf_path = os.path.join(static_dir, nsf_files[0])
+                # NSF文件也是GBK编码
+                for encoding in ['gbk', 'utf-8', 'cp1252', 'latin1']:
+                    try:
+                        with open(nsf_path, 'r', encoding=encoding) as f:
+                            content = f.read()
+                        break
+                    except Exception:
+                        continue
+
+                # 提取底部反力
+                # 查找 "Rx = xxx, Ry = xxx, Rz = xxx" 格式
+                reaction_match = re.search(r'Rx\s*=\s*([-+]?\d+\.?\d*[eE]?[+-]?\d*),?\s*Ry\s*=\s*([-+]?\d+\.?\d*[eE]?[+-]?\d*),?\s*Rz\s*=\s*([-+]?\d+\.?\d*[eE]?[+-]?\d*)', content)
+                if reaction_match:
+                    rx, ry, rz = reaction_match.groups()
+                    results["reactions"] = f"Rx={rx}kN, Ry={ry}kN, Rz={rz}kN"
+
+                # 提取楼层总重
+                weight_match = re.search(r'Fz\s*=\s*([-+]?\d+\.?\d*[eE]?[+-]?\d*)', content)
+                if weight_match:
+                    results["total_weight"] = f"{abs(float(weight_match.group(1))):.2f}kN"
+            except Exception:
+                pass
+
+    # 查找计算报告
+    docx_files = [f for f in os.listdir(model_dir) if f.upper().endswith('.DOCX')]
+    results["reports"] = docx_files
+
+    return results
+
+
+def format_results(results: dict) -> str:
+    """格式化结果为可读字符串"""
+    lines = []
+
+    if results.get("periods"):
+        lines.append(f"  基本周期: {', '.join(results['periods'][:3])}")
+
+    if results.get("frequencies"):
+        lines.append(f"  频率: {', '.join(results['frequencies'][:3])}")
+
+    if results.get("total_weight"):
+        lines.append(f"  楼层总重: {results['total_weight']}")
+
+    if results.get("reactions"):
+        lines.append(f"  底部反力: {results['reactions']}")
+
+    if results.get("reports"):
+        # 过滤掉临时文件和只读文件
+        reports = [r for r in results['reports'] if not r.startswith('~$') and not r.startswith('tmp')]
+        if reports:
+            lines.append(f"  计算报告: {', '.join(reports[:1])}")
+
+    return "\n".join(lines) if lines else "  无结果文件"
+
+
+# 需要清理的文件扩展名和文件夹
+CLEANUP_EXTENSIONS = [
+    '.MSG', '.BCR', '.BLR', '.BEM', '.PAR', '.D01', '.D02', '.D03', '.D04', '.D05',
+    '.EIG', '.FRQ', '.MFQ', '.MOD', '.MOF', '.NSD', '.NSF', '.DEF', '.INP', '.TXT',
+    '.DAT', '.CSV', '.jpg', '.png'
+]
+
+CLEANUP_FOLDERS = [
+    'StaticResult',
+    'EarthQuakeResult',
+    'DesignResult'
+]
+
+
+def cleanup_model_files(model_path: str, dry_run: bool = False) -> dict:
+    """
+    清理模型目录下的临时文件和结果文件
+
+    Args:
+        model_path: 模型文件路径
+        dry_run: 如果为True，只显示要删除的文件但不实际删除
+
+    Returns:
+        dict: 包含清理结果的字典
+    """
+    model_dir = os.path.dirname(model_path)
+    model_name = os.path.splitext(os.path.basename(model_path))[0].upper()
+
+    deleted_files = []
+    deleted_folders = []
+    errors = []
+
+    if not os.path.isdir(model_dir):
+        return {"deleted": [], "errors": ["模型目录不存在"]}
+
+    try:
+        # 清理指定扩展名的文件
+        for filename in os.listdir(model_dir):
+            file_upper = filename.upper()
+            # 排除模型文件本身（.ssg）
+            if file_upper.endswith('.SSG'):
+                continue
+
+            # 检查是否是模型相关文件（同名文件或指定扩展名）
+            is_model_file = (
+                file_upper.startswith(model_name) or
+                any(file_upper.endswith(ext) for ext in CLEANUP_EXTENSIONS)
+            )
+
+            if is_model_file:
+                file_path = os.path.join(model_dir, filename)
+                try:
+                    if dry_run:
+                        deleted_files.append(filename)
+                    else:
+                        os.remove(file_path)
+                        deleted_files.append(filename)
+                except Exception as e:
+                    errors.append(f"删除文件失败: {filename}, 错误: {e}")
+
+        # 清理指定文件夹
+        for folder_name in CLEANUP_FOLDERS:
+            folder_path = os.path.join(model_dir, folder_name)
+            if os.path.isdir(folder_path):
+                try:
+                    if dry_run:
+                        deleted_folders.append(folder_name)
+                    else:
+                        import shutil
+                        shutil.rmtree(folder_path)
+                        deleted_folders.append(folder_name)
+                except Exception as e:
+                    errors.append(f"删除文件夹失败: {folder_name}, 错误: {e}")
+
+    except Exception as e:
+        errors.append(f"清理过程出错: {e}")
+
+    return {
+        "deleted_files": deleted_files,
+        "deleted_folders": deleted_folders,
+        "errors": errors,
+        "total": len(deleted_files) + len(deleted_folders)
+    }
+
+
+def run_sausg(model_path: str, wait: bool = True, sausg_dir: str = None, cleanup: bool = True) -> dict:
     """
     运行 SAUSG 计算
 
@@ -268,12 +595,33 @@ def run_sausg(model_path: str, wait: bool = True, sausg_dir: str = None) -> dict
     Returns:
         dict: 包含状态和消息的字典
     """
+    # 转换模型路径为Windows绝对路径格式
+    model_path = normalize_windows_path(model_path)
+
     # 验证模型文件
     if not os.path.exists(model_path):
         return {"status": "error", "message": f"模型文件不存在: {model_path}"}
 
     if not model_path.lower().endswith('.ssg'):
         return {"status": "error", "message": "模型文件必须是 .ssg 格式"}
+
+    # 清理模型目录下的旧文件（可选）
+    if cleanup:
+        print("清理模型目录下的旧文件...")
+        cleanup_result = cleanup_model_files(model_path)
+        if cleanup_result["total"] > 0:
+            print(f"  已清理: {cleanup_result['total']} 个文件/文件夹")
+            for f in cleanup_result["deleted_files"][:5]:
+                print(f"    - {f}")
+            if len(cleanup_result["deleted_files"]) > 5:
+                print(f"    ... 还有 {len(cleanup_result['deleted_files']) - 5} 个文件")
+            for folder in cleanup_result["deleted_folders"]:
+                print(f"    - {folder}/ (文件夹)")
+            if cleanup_result["errors"]:
+                for err in cleanup_result["errors"]:
+                    print(f"  警告: {err}")
+        else:
+            print("  无需清理的文件")
 
     # 检查是否有计算程序正在运行
     if is_calc_running():
@@ -321,19 +669,48 @@ def run_sausg(model_path: str, wait: bool = True, sausg_dir: str = None) -> dict
 
         if wait:
             print("等待计算完成...")
+            print("=" * 50)
+            print("计算阶段:")
+            print("  [等待] 网格划分")
+            print("  [等待] 初始分析")
+            print("  [等待] 动力时程分析")
+            print("  [等待] 结果报告")
+            print("=" * 50)
 
-            # 轮询检查进程状态
+            # 轮询检查进程状态和进度
             last_check_time = time.time()
+            last_progress_check = 0
+            model_dir = os.path.dirname(model_path)
+            model_name = os.path.splitext(os.path.basename(model_path))[0].upper()
+            prev_progress = {}
+
             while process.poll() is None:
                 time.sleep(5)
 
-                # 每30秒报告一次
                 current_time = time.time()
+                elapsed = int(current_time - start_time)
+                minutes = elapsed // 60
+                seconds = elapsed % 60
+
+                # 每10秒检查一次进度
+                if current_time - last_progress_check >= 10:
+                    progress = check_calc_progress(model_dir, model_name)
+
+                    # 只在进度变化时输出
+                    if progress != prev_progress:
+                        stages = get_calc_stages()
+                        print("\n计算进度:")
+                        for stage in stages:
+                            status = "完成" if progress.get(stage["key"], False) else "进行中"
+                            symbol = "√" if progress.get(stage["key"], False) else "○"
+                            print(f"  [{symbol}] {stage['name']}")
+                        prev_progress = progress.copy()
+
+                    last_progress_check = current_time
+
+                # 每30秒报告一次运行时间
                 if current_time - last_check_time >= 30:
-                    elapsed = int(current_time - start_time)
-                    minutes = elapsed // 60
-                    seconds = elapsed % 60
-                    print(f" 计算进行中... 已运行 {minutes}分{seconds}秒")
+                    print(f"\n计算进行中... 已运行 {minutes}分{seconds}秒")
                     last_check_time = current_time
                 else:
                     print(".", end="", flush=True)
@@ -355,11 +732,25 @@ def run_sausg(model_path: str, wait: bool = True, sausg_dir: str = None) -> dict
                     calc_success = True
 
             if calc_success:
+                # 计算完成后读取主要结果
+                model_dir = os.path.dirname(model_path)
+                model_name = os.path.splitext(os.path.basename(model_path))[0].upper()
+                results = read_main_results(model_dir, model_name)
+
+                print("\n" + "=" * 50)
+                print("计算完成！")
+                print("=" * 50)
+                print("主要结果:")
+                result_str = format_results(results)
+                print(result_str)
+                print("=" * 50)
+
                 return {
                     "status": "success",
                     "message": f"计算完成",
                     "elapsed": f"{minutes}分{seconds}秒",
-                    "sausg_dir": SAUSG_DIR
+                    "sausg_dir": SAUSG_DIR,
+                    "results": results
                 }
             else:
                 stderr_text = stderr.decode('utf-8', errors='replace') if stderr else ""
@@ -377,26 +768,41 @@ def run_sausg(model_path: str, wait: bool = True, sausg_dir: str = None) -> dict
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
+    # 解析参数
+    cleanup = True  # 默认开启清理
+    model_path = None
+    sausg_dir = None
+
+    for arg in sys.argv[1:]:
+        if arg == '--no-cleanup':
+            cleanup = False
+        elif arg == '--cleanup':
+            cleanup = True
+        elif not arg.startswith('-'):
+            if model_path is None:
+                model_path = arg
+            elif sausg_dir is None:
+                sausg_dir = arg
+
+    if not model_path:
         print("SAUSG 自动计算脚本")
         print("=" * 50)
-        print("用法: python sausg_calc.py <模型文件路径> [软件目录]")
+        print("用法: python sausg_calc.py <模型文件路径> [软件目录] [--no-cleanup]")
         print()
         print("参数:")
         print("  模型文件路径: .ssg 格式的模型文件")
         print("  软件目录: 可选，指定 SAUSG 安装目录")
+        print("  --no-cleanup: 可选，不清理模型目录下的旧文件")
         print()
         print("支持环境: cmd, PowerShell")
         print()
         print("示例:")
         print('  python .claude/skills/scripts/sausg_calc.py Test/Example.ssg')
         print(r'  python .claude/skills/scripts/sausg_calc.py Test/Example.ssg "D:\SAUSG2026"')
+        print('  python .claude/skills/scripts/sausg_calc.py Test/Example.ssg --no-cleanup')
         sys.exit(1)
 
-    model_path = sys.argv[1]
-    sausg_dir = sys.argv[2] if len(sys.argv) > 2 else None
-
-    result = run_sausg(model_path, True, sausg_dir)
+    result = run_sausg(model_path, True, sausg_dir, cleanup)
 
     print(f"\n状态: {result['status']}")
     print(f"消息: {result['message']}")
