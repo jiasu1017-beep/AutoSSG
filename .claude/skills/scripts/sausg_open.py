@@ -190,6 +190,9 @@ def open_sausg_model(model_path: str, module: str = None, sausg_dir: str = None)
     Returns:
         dict: 包含状态和消息的字典
     """
+    # 转换为绝对路径
+    model_path = os.path.abspath(model_path)
+
     # 验证模型文件
     if not os.path.exists(model_path):
         return {"status": "error", "message": f"模型文件不存在: {model_path}"}
