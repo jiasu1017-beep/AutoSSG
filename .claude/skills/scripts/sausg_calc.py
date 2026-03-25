@@ -391,7 +391,8 @@ def read_main_results(model_dir: str, model_name: str) -> dict:
     """
     results = {
         "periods": [],      # 基本周期
-        "frequencies": [],  # 频率
+        "frequencies": [],  # 圆频率
+        "freq_hz": [],      # 频率 Hz
         "reactions": None,  # 底部反力
         "reports": []       # 计算报告
     }
@@ -414,22 +415,24 @@ def read_main_results(model_dir: str, model_name: str) -> dict:
 
                 # 解析FRQ文件格式：
                 # 第1行: 计算结果: Nmode = 10
-                # 第2行: 周期  振型频率   频率   阻尼
-                # 后续行: 序号  周期(s)   频率(Hz)  阻尼
+                # 第2行: 序号  圆频率  频率  周期
+                # 后续行: 序号  圆频率(rad/s)  频率(Hz)  周期(s)
                 for line in lines:
                     # 跳过标题行
-                    if '周期' in line or '振型' in line or 'mode' in line.lower():
+                    if '周期' in line or '圆频率' in line or 'mode' in line.lower():
                         continue
                     parts = line.strip().split()
-                    if len(parts) >= 3:
+                    if len(parts) >= 4:
                         try:
-                            # 第一列是序号，第二列是周期，第三列是频率
+                            # 第一列是序号，第二列是圆频率，第三列是频率，第四列是周期
                             mode_num = int(parts[0])
-                            period = float(parts[1])
-                            freq = float(parts[2])
+                            omega = float(parts[1])    # 圆频率 rad/s
+                            freq = float(parts[2])      # 频率 Hz
+                            period = float(parts[3])    # 周期 s
                             if mode_num <= 6:  # 只取前6阶
                                 results["periods"].append(f"T{mode_num}={period:.4f}s")
-                                results["frequencies"].append(f"f{mode_num}={freq:.4f}Hz")
+                                results["frequencies"].append(f"ω{mode_num}={omega:.4f}rad/s")
+                                results["freq_hz"].append(f"f{mode_num}={freq:.4f}Hz")
                         except (ValueError, IndexError):
                             continue
             except Exception as e:
@@ -481,7 +484,10 @@ def format_results(results: dict) -> str:
         lines.append(f"  基本周期: {', '.join(results['periods'][:3])}")
 
     if results.get("frequencies"):
-        lines.append(f"  频率: {', '.join(results['frequencies'][:3])}")
+        lines.append(f"  圆频率: {', '.join(results['frequencies'][:3])}")
+
+    if results.get("freq_hz"):
+        lines.append(f"  频率: {', '.join(results['freq_hz'][:3])}")
 
     if results.get("total_weight"):
         lines.append(f"  楼层总重: {results['total_weight']}")

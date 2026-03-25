@@ -137,11 +137,13 @@ python .claude/skills/scripts/sausg_calc.py Test/Example.ssg --no-cleanup
 
 计算完成后自动输出主要结果：
 
-- 基本周期 (T1, T2, T3...)
-- 频率 (f1, f2, f3...)
+- 基本周期 (T1, T2, T3..., 单位: s)
+- 圆频率 (ω1, ω2, ω3..., 单位: rad/s)
 - 楼层总重
 - 底部反力 (Rx, Ry, Rz)
 - 计算报告文件名
+
+**注意**: FRQ文件中第三列是圆频率(ω, rad/s)，不是普通频率(f, Hz)，两者关系为 ω = 2πf
 
 ### 4. 批量计算多个模型
 
