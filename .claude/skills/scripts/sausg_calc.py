@@ -10,6 +10,7 @@ SAUSG 自动计算脚本
 - 支持指定软件安装目录
 - 防止同时启动多个计算程序
 - 支持 cmd 和 PowerShell 环境
+- 自动读取并显示计算结果
 """
 
 import subprocess
@@ -21,6 +22,10 @@ import locale
 from typing import Optional, List, Tuple
 import ntpath
 import posixpath
+
+# 导入结果读取模块
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from saucg_result import read_main_results as read_results, format_results as format_results
 
 # 设置编码以支持 cmd 和 PowerShell
 if sys.platform == 'win32':
@@ -382,128 +387,6 @@ def format_progress(progress: dict) -> str:
     return "\n".join(lines)
 
 
-def read_main_results(model_dir: str, model_name: str) -> dict:
-    """
-    读取主要计算结果
-
-    Returns:
-        dict: 包含主要结果的字典
-    """
-    results = {
-        "periods": [],      # 基本周期
-        "frequencies": [],  # 圆频率
-        "freq_hz": [],      # 频率 Hz
-        "reactions": None,  # 底部反力
-        "reports": []       # 计算报告
-    }
-
-    # 读取FRQ文件（基本周期和频率）
-    static_dir = os.path.join(model_dir, "StaticResult")
-    if os.path.isdir(static_dir):
-        frq_files = [f for f in os.listdir(static_dir) if f.upper().endswith('.FRQ')]
-        for frq_file in frq_files:
-            try:
-                frq_path = os.path.join(static_dir, frq_file)
-                # FRQ文件是GBK编码
-                for encoding in ['gbk', 'utf-8', 'cp1252', 'latin1']:
-                    try:
-                        with open(frq_path, 'r', encoding=encoding) as f:
-                            lines = f.readlines()
-                        break
-                    except Exception:
-                        continue
-
-                # 解析FRQ文件格式：
-                # 第1行: 计算结果: Nmode = 10
-                # 第2行: 序号  圆频率  频率  周期
-                # 后续行: 序号  圆频率(rad/s)  频率(Hz)  周期(s)
-                for line in lines:
-                    # 跳过标题行
-                    if '周期' in line or '圆频率' in line or 'mode' in line.lower():
-                        continue
-                    parts = line.strip().split()
-                    if len(parts) >= 4:
-                        try:
-                            # 第一列是序号，第二列是圆频率，第三列是频率，第四列是周期
-                            mode_num = int(parts[0])
-                            omega = float(parts[1])    # 圆频率 rad/s
-                            freq = float(parts[2])      # 频率 Hz
-                            period = float(parts[3])    # 周期 s
-                            if mode_num <= 6:  # 只取前6阶
-                                results["periods"].append(f"T{mode_num}={period:.4f}s")
-                                results["frequencies"].append(f"ω{mode_num}={omega:.4f}rad/s")
-                                results["freq_hz"].append(f"f{mode_num}={freq:.4f}Hz")
-                        except (ValueError, IndexError):
-                            continue
-            except Exception as e:
-                print(f"  读取FRQ文件失败: {e}")
-
-        # 读取NSF文件（底部反力）
-        # 格式示例:
-        # 楼层总重(kN): Fx = 0.000000e+00, Fy = 0.000000e+00, Fz = -2.829793e+04
-        # 底反力(kN): Rx = 2.359884e-01, Ry = -2.515078e-03, Rz = 2.829676e+04
-        nsf_files = [f for f in os.listdir(static_dir) if f.upper().endswith('.NSF')]
-        if nsf_files:
-            try:
-                nsf_path = os.path.join(static_dir, nsf_files[0])
-                # NSF文件也是GBK编码
-                for encoding in ['gbk', 'utf-8', 'cp1252', 'latin1']:
-                    try:
-                        with open(nsf_path, 'r', encoding=encoding) as f:
-                            content = f.read()
-                        break
-                    except Exception:
-                        continue
-
-                # 提取底部反力
-                # 查找 "Rx = xxx, Ry = xxx, Rz = xxx" 格式
-                reaction_match = re.search(r'Rx\s*=\s*([-+]?\d+\.?\d*[eE]?[+-]?\d*),?\s*Ry\s*=\s*([-+]?\d+\.?\d*[eE]?[+-]?\d*),?\s*Rz\s*=\s*([-+]?\d+\.?\d*[eE]?[+-]?\d*)', content)
-                if reaction_match:
-                    rx, ry, rz = reaction_match.groups()
-                    results["reactions"] = f"Rx={rx}kN, Ry={ry}kN, Rz={rz}kN"
-
-                # 提取楼层总重
-                weight_match = re.search(r'Fz\s*=\s*([-+]?\d+\.?\d*[eE]?[+-]?\d*)', content)
-                if weight_match:
-                    results["total_weight"] = f"{abs(float(weight_match.group(1))):.2f}kN"
-            except Exception:
-                pass
-
-    # 查找计算报告
-    docx_files = [f for f in os.listdir(model_dir) if f.upper().endswith('.DOCX')]
-    results["reports"] = docx_files
-
-    return results
-
-
-def format_results(results: dict) -> str:
-    """格式化结果为可读字符串"""
-    lines = []
-
-    if results.get("periods"):
-        lines.append(f"  基本周期: {', '.join(results['periods'][:3])}")
-
-    if results.get("frequencies"):
-        lines.append(f"  圆频率: {', '.join(results['frequencies'][:3])}")
-
-    if results.get("freq_hz"):
-        lines.append(f"  频率: {', '.join(results['freq_hz'][:3])}")
-
-    if results.get("total_weight"):
-        lines.append(f"  楼层总重: {results['total_weight']}")
-
-    if results.get("reactions"):
-        lines.append(f"  底部反力: {results['reactions']}")
-
-    if results.get("reports"):
-        # 过滤掉临时文件和只读文件
-        reports = [r for r in results['reports'] if not r.startswith('~$') and not r.startswith('tmp')]
-        if reports:
-            lines.append(f"  计算报告: {', '.join(reports[:1])}")
-
-    return "\n".join(lines) if lines else "  无结果文件"
-
-
 # 需要清理的文件扩展名和文件夹
 CLEANUP_EXTENSIONS = [
     '.MSG', '.BCR', '.BLR', '.BEM', '.PAR', '.D01', '.D02', '.D03', '.D04', '.D05',
@@ -741,7 +624,7 @@ def run_sausg(model_path: str, wait: bool = True, sausg_dir: str = None, cleanup
                 # 计算完成后读取主要结果
                 model_dir = os.path.dirname(model_path)
                 model_name = os.path.splitext(os.path.basename(model_path))[0].upper()
-                results = read_main_results(model_dir, model_name)
+                results = read_results(model_dir, model_name)
 
                 print("\n" + "=" * 50)
                 print("计算完成！")

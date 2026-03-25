@@ -13,6 +13,14 @@ SAUSG（结构通用分析与设计软件）是一款专业的结构工程分析
 | 计算程序 | FeaCalc64.exe / FeaCalc64S.exe / FeaCalcOMP64.exe |
 | 下载链接 | https://product.pkpm.cn/productDetails?productId=56 |
 
+## 脚本说明
+
+| 脚本 | 功能 |
+|------|------|
+| [sausg_calc.py](.claude/skills/scripts/sausg_calc.py) | 自动运行SAUSG进行结构计算 |
+| [sausg_result.py](.claude/skills/scripts/sausg_result.py) | 读取并显示计算结果 |
+| [sausg_open.py](.claude/skills/scripts/sausg_open.py) | 用指定模块打开模型 |
+
 ## SAUSG 模块说明
 
 | 模块 | 可执行文件 | 功能说明 |
@@ -141,11 +149,49 @@ python .claude/skills/scripts/sausg_calc.py Test/Example.ssg --no-cleanup
 - 圆频率 (ω1, ω2, ω3..., 单位: rad/s)
 - 楼层总重
 - 底部反力 (Rx, Ry, Rz)
+- 基底剪力（X向/Y向，含剪重比）- 从报告提取
+- 最大层间位移角（X向/Y向）- 从报告提取
 - 计算报告文件名
 
 **注意**: FRQ文件中第三列是圆频率(ω, rad/s)，不是普通频率(f, Hz)，两者关系为 ω = 2πf
 
-### 4. 批量计算多个模型
+### 4. 读取计算结果
+
+使用 `sausg_result.py` 脚本读取已完成的计算结果。
+
+#### 命令格式
+
+```bash
+python .claude/skills/scripts/sausg_result.py <模型目录> [模型名称]
+```
+
+#### 参数说明
+
+- `模型目录`: 模型文件所在目录
+- `模型名称`: 可选，模型名称（不带扩展名）
+
+#### 使用示例
+
+```bash
+# 读取MulProject/P1目录下的计算结果
+python .claude/skills/scripts/sausg_result.py MulProject/P1 P1
+
+# 读取Project目录下的计算结果
+python .claude/skills/scripts/sausg_result.py Project/Example
+```
+
+#### 输出内容
+
+- 基本周期 (T1, T2, T3...)
+- 圆频率 (ω1, ω2, ω3...)
+- 频率 (f1, f2, f3...)
+- 楼层总重
+- 底部反力
+- 基底剪力（X向/Y向，含剪重比）
+- 最大层间位移角（X向/Y向）
+- 计算报告文件名
+
+### 5. 批量计算多个模型
 
 **重要：必须等待前一个模型计算完成后再计算下一个模型！**
 
