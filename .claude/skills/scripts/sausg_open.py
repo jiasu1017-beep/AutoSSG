@@ -17,6 +17,14 @@ import os
 import re
 from typing import Optional, List, Tuple
 
+# 解决 Windows 命令行输出中文乱码问题
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
 # 默认安装目录
 DEFAULT_SAUSG_DIR = "D:\\SAUSG2026.2"
 
@@ -74,7 +82,9 @@ def search_sausg_installer() -> Optional[str]:
             'dir /ad /b D:\\SAUSG* 2>nul',
             shell=True,
             capture_output=True,
-            text=True
+            text=True,
+            encoding='utf-8',
+            errors='replace'
         )
 
         if result.returncode == 0:
@@ -96,7 +106,9 @@ def search_sausg_installer() -> Optional[str]:
                         f'dir /ad /b {drive}\\SAUSG* 2>nul',
                         shell=True,
                         capture_output=True,
-                        text=True
+                        text=True,
+                        encoding='utf-8',
+                        errors='replace'
                     )
                     if result.returncode == 0:
                         for line in result.stdout.strip().split('\n'):
