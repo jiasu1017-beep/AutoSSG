@@ -25,7 +25,7 @@ import posixpath
 
 # 导入结果读取模块
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from saucg_result import read_main_results as read_results, format_results as format_results
+from sausg_result import read_main_results as read_results, format_results as format_results
 
 # 设置编码以支持 cmd 和 PowerShell
 if sys.platform == 'win32':

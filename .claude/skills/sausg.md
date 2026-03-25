@@ -205,25 +205,6 @@ python .claude/skills/scripts/sausg_calc.py Project/Model2.ssg
 # 等待计算完成后再执行下一个
 python .claude/skills/scripts/sausg_calc.py Project/Model3.ssg
 ```
-
-## 项目结构
-
-```
-F:\00AI\AutoSSG\
-├── Project\                 # 项目模型文件目录
-│   └── Example2.ssg         # 示例模型
-├── Test\                    # 测试目录
-│   └── Example.ssg          # 测试用模型
-├── run.bat                  # 快捷启动脚本
-├── SAUSG说明.md             # SAUSG 软件说明
-├── .claude\
-│   └── skills\
-│       ├── saucg.md         # 本文档
-│       └── scripts\
-│           ├── saucg_calc.py  # 计算脚本（支持自动搜索软件）
-│           └── saucg_open.py   # 模块启动脚本（支持自动搜索软件）
-```
-
 ## 支持的终端环境
 
 脚本同时支持 **cmd** 和 **PowerShell** 两种终端环境。
