@@ -1,3 +1,8 @@
+---
+name: sausg
+description: SAUSG（结构通用分析与设计软件）自动计算与操作工具。用于弹塑性计算、非线性分析、动力时程分析、隔震减震设计、钢结构分析等。当用户提及 SAUSG、SAUSAGE、OpenSAUSG、SAUSGDelta、SAUSGJG、SAUSGPI、SAUSGZeta 等相关软件，或要求进行弹塑性计算、读取计算结果时使用此技能。
+---
+
 # SAUSG 自动计算与操作指南
 
 SAUSG（结构通用分析与设计软件）是一款专业的结构工程分析与设计软件，包含多个专业模块。
