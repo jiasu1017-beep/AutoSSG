@@ -64,3 +64,4 @@ AutoSSG/
 - 不要同时启动多个计算程序
 - 支持 cmd 和 PowerShell 环境
 - 模型文件使用 .ssg 格式
+- 在trae中使用，需要将python加入白名单
