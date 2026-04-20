@@ -14,6 +14,7 @@ SAUSG（结构通用分析与设计软件）是一款专业的结构工程分析
 - SAUSG、SAUSAGE 相关操作
 - 隔震、减震、加固、钢结构分析
 - 读取/查看计算结果
+- 转换为 ABAQUS、INP 文件、SSG2INP
 
 ## 快速开始
 
@@ -28,9 +29,27 @@ python <skill>/scripts/sausg_calc.py <模型路径> [软件目录] [--no-cleanup
 
 # 读取计算结果
 python <skill>/scripts/sausg_result.py <模型目录> [模型名称]
+
+# 转换模型为 ABAQUS INP 格式
+python <skill>/scripts/sausg_to_abaqus.py <模型路径或目录> [文件模式] [输出目录] [软件目录]
 ```
 
 > **注**：`<skill>` 指 `.claude/skills/sausg`
+
+### 转换到 ABAQUS
+
+使用 `SSG2INPmain.exe` 将 SAUSG 模型转换为 ABAQUS 可读的 `.inp` 文件：
+
+```bash
+# 转换单个文件
+python .claude/skills/sausg/scripts/sausg_to_abaqus.py "Test\Model.ssg"
+
+# 批量转换目录下所有模型
+python .claude/skills/sausg/scripts/sausg_to_abaqus.py "Test" "*.ssg"
+
+# 指定输出目录
+python .claude/skills/sausg/scripts/sausg_to_abaqus.py "Test" "*.ssg" "F:\Output"
+```
 
 ### 模块名称
 
@@ -62,6 +81,7 @@ python .claude/skills/sausg/scripts/sausg_result.py Project/Model Model
 - "用隔震软件打开模型" → 调用 SAUSGPI.exe
 - "运行非线性计算" → 调用 SAUSAGE.exe
 - "读取P2的结果" → 调用结果读取脚本
+- "把模型转为ABAQUS格式" → 调用 SSG2INPmain.exe
 
 ## 软件信息
 
