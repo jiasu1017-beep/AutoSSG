@@ -15,6 +15,7 @@ SAUSG（结构通用分析与设计软件）是一款专业的结构工程分析
 - 隔震、减震、加固、钢结构分析
 - 读取/查看计算结果
 - 转换为 ABAQUS、INP 文件、SSG2INP
+- 删除计算结果、清理结果文件
 
 ## 快速开始
 
@@ -32,6 +33,9 @@ python <skill>/scripts/sausg_result.py <模型目录> [模型名称]
 
 # 转换模型为 ABAQUS INP 格式
 python <skill>/scripts/sausg_to_abaqus.py <模型路径或目录> [文件模式] [输出目录] [软件目录]
+
+# 删除计算结果（保留.ssg和Userdata）
+python <skill>/scripts/sausg_delete_result.py <模型文件或目录> [--confirm]
 ```
 
 > **注**：`<skill>` 指 `.claude/skills/sausg`
@@ -73,6 +77,12 @@ python .claude/skills/sausg/scripts/sausg_calc.py Project/Model.ssg
 
 # 读取结果
 python .claude/skills/sausg/scripts/sausg_result.py Project/Model Model
+
+# 删除计算结果（预览模式）
+python .claude/skills/sausg/scripts/sausg_delete_result.py Project/Model.ssg
+
+# 删除计算结果（确认删除）
+python .claude/skills/sausg/scripts/sausg_delete_result.py Project/Model.ssg --confirm
 ```
 
 ### 自然语言
@@ -82,6 +92,7 @@ python .claude/skills/sausg/scripts/sausg_result.py Project/Model Model
 - "运行非线性计算" → 调用 SAUSAGE.exe
 - "读取P2的结果" → 调用结果读取脚本
 - "把模型转为ABAQUS格式" → 调用 SSG2INPmain.exe
+- "删除XX路径的计算结果" → 调用删除结果脚本
 
 ## 软件信息
 
